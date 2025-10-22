@@ -1,0 +1,5 @@
+Flask==2.2.2
+Flask-SQLAlchemy==2.5.1
+SQLAlchemy==1.4.39
+Flask-Cors==3.0.10
+greenlet==2.0.2

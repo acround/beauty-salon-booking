@@ -1,0 +1,231 @@
+import React, { useState, useMemo } from 'react';
+import { Language, LocalizedString, Role, ScheduleChangeRequest, ScheduleChangeRequestStatus, Review } from './types';
+import { useLocalization } from './hooks/useLocalization';
+import AdminScreen from './screens/AdminScreen';
+import ServicesScreen from './screens/ServicesScreen';
+import MyBookingsScreen from './screens/MyBookingsScreen';
+import NewsScreen from './screens/NewsScreen';
+import ProfileScreen from './screens/ProfileScreen';
+import SpecialistsScreen from './screens/SpecialistsScreen';
+import { mockServices, mockSpecialists, mockBookings, mockNews, mockUsers, mockScheduleChangeRequests } from './data/mockData';
+import { Service, Specialist, Booking, Publication, User } from './types';
+import BottomNav from './components/BottomNav';
+import BookingFlow from './screens/BookingFlow';
+import ServiceDetailScreen from './screens/ServiceDetailScreen';
+import LanguageSwitcher from './components/LanguageSwitcher';
+
+type View = 'services' | 'bookings' | 'news' | 'specialists' | 'profile' | 'admin' | 'bookingFlow' | 'serviceDetail';
+
+const App: React.FC = () => {
+    const [language, setLanguage] = useState<Language>('ru');
+    const { t, lt } = useLocalization(language);
+
+    // --- State Management (Simulating Database) ---
+    const [services, setServices] = useState<Service[]>(mockServices);
+    const [specialists, setSpecialists] = useState<Specialist[]>(mockSpecialists);
+    const [bookings, setBookings] = useState<Booking[]>(mockBookings);
+    const [news, setNews] = useState<Publication[]>(mockNews);
+    const [users, setUsers] = useState<User[]>(mockUsers);
+    const [scheduleRequests, setScheduleRequests] = useState<ScheduleChangeRequest[]>(mockScheduleChangeRequests);
+    
+    const [currentUser, setCurrentUser] = useState<User>(users[0]);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [currentView, setCurrentView] = useState<View>('services');
+
+    const [bookingState, setBookingState] = useState<{service: Service | null, specialistId: string | null}>({ service: null, specialistId: null });
+    const [selectedService, setSelectedService] = useState<Service | null>(null);
+
+    const privilegedUsers = useMemo(() => users.filter(u => u.role !== Role.User), [users]);
+
+    const handleLogin = (key: string) => {
+        if (key === 'admin_pass') {
+            const adminUser = users.find(u => u.role === Role.Admin);
+            if (adminUser) {
+                setCurrentUser(adminUser);
+                setIsAdmin(true);
+                setCurrentView('admin');
+            }
+        } else {
+            const specialist = specialists.find(s => s.accessKey === key);
+            if (specialist) {
+                const specUser = users.find(u => u.specialistId === specialist.id);
+                if(specUser) {
+                    setCurrentUser(specUser);
+                    setIsAdmin(true);
+                    setCurrentView('admin');
+                }
+            }
+        }
+    };
+    
+    const handleLogout = () => {
+        setIsAdmin(false);
+        setCurrentUser(users[0]);
+        setCurrentView('services');
+    };
+
+    const startBooking = (service: Service, specialistId?: string) => {
+        setBookingState({ service, specialistId: specialistId || null });
+        setCurrentView('bookingFlow');
+    };
+
+    const exitBookingFlow = () => {
+        setBookingState({ service: null, specialistId: null });
+        setCurrentView('services');
+    };
+    
+    const showServiceDetail = (service: Service) => {
+        setSelectedService(service);
+        setCurrentView('serviceDetail');
+    };
+    
+    const exitServiceDetail = () => {
+        setSelectedService(null);
+        setCurrentView('services');
+    };
+
+    const confirmBooking = (newBooking: Omit<Booking, 'id' | 'status'>) => {
+        setBookings(prev => [...prev, {
+            id: `b${prev.length + 1}`,
+            ...newBooking,
+            status: 'confirmed'
+        }]);
+        setCurrentView('bookings');
+    };
+
+    const handleScheduleRequestUpdate = (requestId: string, status: 'approved' | 'rejected') => {
+        const request = scheduleRequests.find(r => r.id === requestId);
+        if (!request) return;
+
+        // Update request status
+        setScheduleRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: status as ScheduleChangeRequestStatus } : r));
+
+        // If approved, update specialist's schedule
+        if (status === 'approved') {
+            setSpecialists(prevSpecs => prevSpecs.map(spec => {
+                if (spec.id === request.specialistId) {
+                    const newSchedule = { ...spec.workSchedule, [request.date]: request.requestedSlots };
+                    return { ...spec, workSchedule: newSchedule };
+                }
+                return spec;
+            }));
+        }
+    };
+    
+    const handleAddScheduleRequest = (newRequest: Omit<ScheduleChangeRequest, 'id'>) => {
+        setScheduleRequests(prev => [...prev, {
+            id: `scr${prev.length + 1}`,
+            ...newRequest
+        }]);
+    };
+
+    const handleAddReview = (bookingId: string, specialistId: string, newReviewData: Omit<Review, 'id' | 'isModerated'>) => {
+        const newReview: Review = {
+            id: `r${Date.now()}`,
+            ...newReviewData,
+            isModerated: false,
+        };
+
+        // Add review to the specialist
+        setSpecialists(prev => prev.map(spec => {
+            if (spec.id === specialistId) {
+                return { ...spec, reviews: [...spec.reviews, newReview] };
+            }
+            return spec;
+        }));
+
+        // Mark the booking as having a review submitted
+        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, reviewSubmitted: true } : b));
+    };
+
+    const renderContent = () => {
+        if (currentView === 'admin' && isAdmin) {
+            return (
+                <AdminScreen
+                    currentUser={currentUser}
+                    onLogout={handleLogout}
+                    language={language}
+                    // Pass state and setters to admin panel
+                    services={services}
+                    setServices={setServices}
+                    specialists={specialists}
+                    setSpecialists={setSpecialists}
+                    bookings={bookings}
+                    setBookings={setBookings}
+                    news={news}
+                    setNews={setNews}
+                    scheduleRequests={scheduleRequests}
+                    onScheduleRequestUpdate={handleScheduleRequestUpdate}
+                    onAddScheduleRequest={handleAddScheduleRequest}
+                />
+            );
+        }
+        
+        if (currentView === 'bookingFlow' && bookingState.service) {
+            return (
+                <BookingFlow 
+                    service={bookingState.service}
+                    initialSpecialistId={bookingState.specialistId}
+                    specialists={specialists.filter(sp => bookingState.service?.specialistIds.includes(sp.id))}
+                    bookings={bookings}
+                    services={services}
+                    onConfirm={confirmBooking}
+                    onExit={exitBookingFlow}
+                    language={language}
+                    userId={currentUser.id}
+                />
+            );
+        }
+        
+        if (currentView === 'serviceDetail' && selectedService) {
+            return (
+                <ServiceDetailScreen
+                    t={t}
+                    lt={lt}
+                    service={selectedService}
+                    specialists={specialists.filter(s => selectedService.specialistIds.includes(s.id))}
+                    onBook={() => startBooking(selectedService)}
+                    onBack={exitServiceDetail}
+                 />
+            );
+        }
+
+        switch (currentView) {
+            case 'services':
+                return <ServicesScreen t={t} lt={lt} services={services} specialists={specialists} onBook={startBooking} onShowDetail={showServiceDetail} />;
+            case 'bookings':
+                return <MyBookingsScreen t={t} lt={lt} bookings={bookings.filter(b => b.userId === currentUser.id)} services={services} specialists={specialists} setBookings={setBookings} onAddReview={handleAddReview} currentUser={currentUser} />;
+            case 'news':
+                return <NewsScreen t={t} lt={lt} publications={news} />;
+            case 'specialists':
+                return <SpecialistsScreen t={t} lt={lt} specialists={specialists} services={services} onBook={startBooking} />;
+            case 'profile':
+                return <ProfileScreen 
+                    t={t} 
+                    user={currentUser} 
+                    setUser={setCurrentUser} 
+                    onAdminLogin={handleLogin}
+                    privilegedUsers={privilegedUsers} 
+                />;
+            default:
+                return <ServicesScreen t={t} lt={lt} services={services} specialists={specialists} onBook={startBooking} onShowDetail={showServiceDetail} />;
+        }
+    };
+
+    return (
+        <div className="flex justify-center items-start min-h-screen p-4">
+            <div className="w-full max-w-md h-[800px] max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col font-sans relative">
+                {!isAdmin && <LanguageSwitcher currentLanguage={language} setLanguage={setLanguage} />}
+                <div className="flex-grow overflow-y-auto">
+                    {renderContent()}
+                </div>
+                {/* FIX: Add `currentView !== 'admin'` to the condition. This helps TypeScript narrow the type of `currentView` to what the `BottomNav` component expects. The logic `!isAdmin` already implies `currentView` is not 'admin', but this explicit check is needed for type safety. */}
+                {(!isAdmin && currentView !== 'bookingFlow' && currentView !== 'serviceDetail' && currentView !== 'admin') && (
+                    <BottomNav currentView={currentView} setCurrentView={setCurrentView} t={t} />
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default App;

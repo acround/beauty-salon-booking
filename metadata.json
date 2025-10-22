@@ -1,0 +1,7 @@
+{
+  "name": "Beauty Salon Booking Bot",
+  "description": "A web application simulating a multi-language Telegram bot for booking appointments at a beauty salon or clinic. It includes user features for booking and viewing services, a personal cabinet, and a comprehensive admin panel for managing specialists, services, schedules, and publications, with AI-powered translation for content creation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

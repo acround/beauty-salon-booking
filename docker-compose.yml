@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      # This API key is passed to the container at runtime
+      # The entrypoint.sh script will inject it into the JS code
+      - API_KEY=${API_KEY}
+    depends_on:
+      - backend
+    # We can add a healthcheck to ensure backend is ready before frontend starts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://backend:5000/api/services"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount a volume to persist the SQLite database file
+      - backend_data:/app
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development # Use 'production' in a real deployment
+
+volumes:
+  backend_data:
